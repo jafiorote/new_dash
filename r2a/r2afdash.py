@@ -21,9 +21,9 @@ class R2AFDash(IR2A):
         IR2A.__init__(self, id)
         self.parsed_mpd = ''
         self.qi = []
-        self.d = 10  # seconds
+        self.d = 2  # seconds
         self.throughputs = []  # np array
-        self.target_buff_t = 5  # seconds
+        self.target_buff_t = 15  # seconds
         self.start_idx_br = -10
         self.curr_idx = 0
 
@@ -62,7 +62,7 @@ class R2AFDash(IR2A):
             v2 = 1 / ((self.target_buff_t * 3) * (delta_t - self.target_buff_t))
             return [(1, v1), (2, v2)]
 
-        elif delta_t > 2 * self.target_buff_t / 3:
+        elif delta_t > self.target_buff_t / 3:
             v0 = 1 - (1 / ((self.target_buff_t / 3) * (delta_t - 2 * self.target_buff_t / 3)))
             v1 = 1 / ((self.target_buff_t / 3) * (delta_t - 2 * self.target_buff_t / 3))
             return [(0, v0), (1, v1)]
@@ -194,25 +194,30 @@ class R2AFDash(IR2A):
 
         new_idx = 0
 
-        if self.get_rd() == 0:
+        if len(self.throughputs) < 1:
             new_idx = self.start_idx_br
             self.curr_idx = new_idx
 
         bi = f * self.get_rd()
 
         for idx in range(len(self.qi)):
-            if bi > self.qi[(idx + 1) * -1]:
+            if bi >= self.qi[(idx + 1) * -1]:
                 new_idx = (idx + 1) * -1
                 break
+            else:
+                new_idx = -len(self.qi)
 
-        t_compare = tam_buffer + (self.get_rd() / self.qi[new_idx] - 1) * self.d
+        buffer_sz = self.whiteboard.get_playback_buffer_size()[-1][1] if \
+            len(self.whiteboard.get_playback_buffer_size()) else 1
+        t_compare = buffer_sz + (self.get_rd() / self.qi[new_idx] - 1) * self.d
 
-        if new_idx > self.curr_idx and self.target_buff_t < t_compare:
+        if new_idx > self.curr_idx and self.target_buff_t > t_compare:
             new_idx = self.curr_idx
-        elif new_idx < self.curr_idx and self.target_buff_t > t_compare:
+        elif new_idx < self.curr_idx and self.target_buff_t < t_compare:
             new_idx = self.curr_idx
         else:
             self.curr_idx = new_idx
+
 
         return new_idx
 
@@ -240,7 +245,7 @@ class R2AFDash(IR2A):
         msg.add_quality_id(self.qi[idx])
         throughputs = np.zeros((1, 3), dtype=float)
         self.throughputs = np.vstack((self.throughputs, throughputs))
-        throughputs[-1][0] = time.perf_counter()
+        self.throughputs[-1][0] = time.perf_counter()
         self.send_down(msg)
 
     def handle_segment_size_response(self, msg):
